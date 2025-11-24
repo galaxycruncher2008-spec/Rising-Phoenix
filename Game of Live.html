@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Conway's Game of Life created by LunarMage</title>
+  <style>
+    :root{--accent:#22a;--bg:#0f1724;--panel:#0b1220;--muted:#94a3b8}
+    html,body{height:100%;margin:0;font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;color:#e6eef8;background:linear-gradient(180deg,#071024 0%, #071428 100%);}
+    .app{display:flex;flex-direction:column;height:100%;gap:12px;padding:14px;box-sizing:border-box}
+    header{display:flex;align-items:center;gap:12px}
+    h1{font-size:18px;margin:0}
+    .main{display:flex;gap:12px;flex:1;min-height:0}
+    .left{flex:1;display:flex;flex-direction:column;background:rgba(255,255,255,0.02);padding:10px;border-radius:10px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;border-radius:8px;overflow:hidden}
+    canvas{background:#071022;border:1px solid rgba(255,255,255,0.03);image-rendering:pixelated}
+    .controls{width:320px;display:flex;flex-direction:column;gap:10px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:12px;border-radius:10px}
+    .row{display:flex;gap:8px;align-items:center}
+    label{font-size:13px;color:var(--muted)}
+    input[type=range]{width:100%}
+    button{background:var(--accent);color:white;border:0;padding:8px 10px;border-radius:8px;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+    .small{padding:6px 8px;font-size:13px}
+    select,input[type=number]{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px;border-radius:6px;color:inherit}
+    footer{font-size:12px;color:var(--muted);display:flex;justify-content:space-between}
+    .preset-grid{display:flex;flex-wrap:wrap;gap:6px}
+    .preset-grid button{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03);color:var(--muted);padding:6px;border-radius:6px}
+    @media (max-width:900px){.main{flex-direction:column}.controls{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Conway's Game of Life</h1>
+      <div style="color:var(--muted);font-size:13px">Klicke Zellen, dann Start (Leertaste Start/Stop)</div>
+    </header>
+
+    <div class="main">
+      <div class="left">
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+          <div style="font-size:13px;color:var(--muted)">Generation:</div>
+          <div id="gen" style="font-weight:600">0</div>
+          <div style="margin-left:auto;font-size:13px;color:var(--muted)">Lebende Zellen: <span id="pop">0</span></div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="gol"></canvas>
+        </div>
+      </div>
+
+      <aside class="controls">
+        <div class="row">
+          <button id="start" class="small">Start</button>
+          <button id="step" class="small ghost">Schritt</button>
+          <button id="random" class="small ghost">Zufall</button>
+          <button id="clear" class="small ghost">Leeren</button>
+        </div>
+
+        <div class="row">
+          <label for="speed">Geschwindigkeit</label>
+          <input id="speed" type="range" min="1" max="60" value="8" />
+        </div>
+
+        <div class="row">
+          <label for="cellSize">Zellgröße (px)</label>
+          <input id="cellSize" type="range" min="4" max="24" value="12" />
+        </div>
+
+        <div class="row">
+          <label for="wrap">Toroid (wrap)</label>
+          <select id="wrap"><option value="1">An</option><option value="0">Aus</option></select>
+        </div>
+
+        <div class="row">
+          <label for="density">Zufalls-Dichte</label>
+          <input id="density" type="range" min="1" max="100" value="25" />
+        </div>
+
+        <div style="font-size:13px;color:var(--muted)">Presets</div>
+        <div class="preset-grid">
+          <button data-preset="glider">Glider</button>
+          <button data-preset="lwss">LWSS</button>
+          <button data-preset="pulsar">Pulsar</button>
+          <button data-preset="gosper">Gosper Gun</button>
+        </div>
+
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button id="save" class="small ghost">Export JSON</button>
+          <button id="load" class="small ghost">Import JSON</button>
+        </div>
+
+        <div style="margin-top:auto">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Tipps</div>
+          <ul style="margin:0;padding-left:18px;color:var(--muted);font-size:13px">
+            <li>Klicke auf das Feld, um Zellen umzuschalten.</li>
+            <li>Leertaste = Start/Stop, S = Schritt, R = Zufall, C = Clear</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+
+    <footer>
+      <div>Einfaches Demo — Single-file</div>
+      <div id="credits" style="color:var(--muted)">By LunarMage</div>
+    </footer>
+  </div>
+
+  <script>
+    // Single-file Conway's Game of Life implementation
+    const canvas = document.getElementById('gol');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('start');
+    const stepBtn = document.getElementById('step');
+    const randomBtn = document.getElementById('random');
+    const clearBtn = document.getElementById('clear');
+    const speedInput = document.getElementById('speed');
+    const sizeInput = document.getElementById('cellSize');
+    const densityInput = document.getElementById('density');
+    const wrapSelect = document.getElementById('wrap');
+    const genEl = document.getElementById('gen');
+    const popEl = document.getElementById('pop');
+    const presetButtons = document.querySelectorAll('[data-preset]');
+    const saveBtn = document.getElementById('save');
+    const loadBtn = document.getElementById('load');
+
+    let cols = 80, rows = 50; // will be recalculated
+    let cellSize = parseInt(sizeInput.value,10);
+    let grid = [];
+    let running = false;
+    let generation = 0;
+    let rafId = null;
+    let lastTick = 0;
+
+    function resizeCanvas(){
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const availableW = Math.floor(rect.width - 4);
+      const availableH = Math.floor(rect.height - 4);
+      cellSize = parseInt(sizeInput.value,10);
+      cols = Math.max(10, Math.floor(availableW / cellSize));
+      rows = Math.max(10, Math.floor(availableH / cellSize));
+      canvas.width = cols * cellSize;
+      canvas.height = rows * cellSize;
+      canvas.style.width = canvas.width + 'px';
+      canvas.style.height = canvas.height + 'px';
+      // preserve existing pattern centered
+      const newGrid = makeEmptyGrid();
+      const xoff = Math.floor((newGrid.cols - grid.cols)/2) || 0;
+      const yoff = Math.floor((newGrid.rows - grid.rows)/2) || 0;
+      if (grid.cells) {
+        for (let y=0;y<grid.rows;y++){
+          for (let x=0;x<grid.cols;x++){
+            const nx = x + xoff, ny = y + yoff;
+            if (nx>=0 && nx<newGrid.cols && ny>=0 && ny<newGrid.rows) newGrid.cells[ny][nx] = grid.cells[y][x];
+          }
+        }
+      }
+      grid = newGrid;
+      draw();
+    }
+
+    function makeEmptyGrid(){
+      const cells = new Array(rows).fill(null).map(()=>new Array(cols).fill(0));
+      return {rows,cols,cells};
+    }
+
+    function randomize(){
+      const density = Math.max(1,Math.min(100,parseInt(densityInput.value,10)));
+      for (let y=0;y<rows;y++){
+        for (let x=0;x<cols;x++){
+          grid.cells[y][x] = (Math.random()*100 < density) ? 1 : 0;
+        }
+      }
+      generation = 0; updateStats(); draw();
+    }
+
+    function clearGrid(){
+      grid = makeEmptyGrid(); generation = 0; updateStats(); draw();
+    }
+
+    function countNeighbors(y,x){
+      const wrap = wrapSelect.value === '1';
+      let n = 0;
+      for (let dy=-1;dy<=1;dy++){
+        for (let dx=-1;dx<=1;dx++){
+          if (dy===0 && dx===0) continue;
+          let yy = y+dy, xx = x+dx;
+          if (wrap){
+            yy = (yy + rows) % rows; xx = (xx + cols) % cols;
+            if (grid.cells[yy][xx]) n++;
+          } else {
+            if (yy>=0 && yy<rows && xx>=0 && xx<cols){ if (grid.cells[yy][xx]) n++; }
+          }
+        }
+      }
+      return n;
+    }
+
+    function step(){
+      const newCells = new Array(rows).fill(null).map(()=>new Array(cols).fill(0));
+      let pop = 0;
+      for (let y=0;y<rows;y++){
+        for (let x=0;x<cols;x++){
+          const n = countNeighbors(y,x);
+          const alive = grid.cells[y][x] === 1;
+          if (alive){
+            newCells[y][x] = (n===2||n===3) ? 1 : 0;
+          } else {
+            newCells[y][x] = (n===3) ? 1 : 0;
+          }
+          if (newCells[y][x]) pop++;
+        }
+      }
+      grid.cells = newCells; generation++; updateStats(pop); draw();
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      // background grid
+      ctx.fillStyle = '#071022';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      const cell = cellSize;
+      // draw cells
+      let pop = 0;
+      for (let y=0;y<rows;y++){
+        for (let x=0;x<cols;x++){
+          if (grid.cells[y][x]){
+            pop++;
+            ctx.fillStyle = '#65a30d';
+            ctx.fillRect(x*cell, y*cell, cell, cell);
+          }
+        }
+      }
+      // grid lines
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+      ctx.lineWidth = 1;
+      for (let x=0;x<=cols;x++){
+        ctx.beginPath(); ctx.moveTo(x*cell+0.5,0); ctx.lineTo(x*cell+0.5,rows*cell); ctx.stroke();
+      }
+      for (let y=0;y<=rows;y++){
+        ctx.beginPath(); ctx.moveTo(0,y*cell+0.5); ctx.lineTo(cols*cell,y*cell+0.5); ctx.stroke();
+      }
+      updateStats(pop);
+    }
+
+    function updateStats(pop){
+      genEl.textContent = generation;
+      if (typeof pop === 'number') popEl.textContent = pop; else {
+        let p=0; for (let y=0;y<rows;y++) for (let x=0;x<cols;x++) if (grid.cells[y][x]) p++; popEl.textContent = p;
+      }
+    }
+
+    function tick(now){
+      const fps = parseInt(speedInput.value,10);
+      const msPerStep = 1000 / fps;
+      if (!lastTick) lastTick = now;
+      const diff = now - lastTick;
+      if (diff >= msPerStep){ step(); lastTick = now; }
+      if (running) rafId = requestAnimationFrame(tick);
+    }
+
+    function toggleRunning(){
+      running = !running;
+      startBtn.textContent = running ? 'Stop' : 'Start';
+      if (running){ lastTick = 0; rafId = requestAnimationFrame(tick); } else { cancelAnimationFrame(rafId); rafId = null; }
+    }
+
+    // mouse interaction
+    canvas.addEventListener('click', (e)=>{
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / cellSize);
+      const y = Math.floor((e.clientY - rect.top) / cellSize);
+      if (x>=0 && x<cols && y>=0 && y<rows){
+        grid.cells[y][x] = grid.cells[y][x] ? 0 : 1; draw();
+      }
+    });
+
+    window.addEventListener('resize', ()=>{ // debounce
+      clearTimeout(window._gol_resize);
+      window._gol_resize = setTimeout(()=>{ resizeCanvas(); },120);
+    });
+
+    // keyboard shortcuts
+    window.addEventListener('keydown',(e)=>{
+      if (e.code === 'Space'){ e.preventDefault(); toggleRunning(); }
+      else if (e.key.toLowerCase() === 's'){ step(); }
+      else if (e.key.toLowerCase() === 'r'){ randomize(); }
+      else if (e.key.toLowerCase() === 'c'){ clearGrid(); }
+    });
+
+    // UI bindings
+    startBtn.addEventListener('click', toggleRunning);
+    stepBtn.addEventListener('click', ()=>{ step(); });
+    randomBtn.addEventListener('click', ()=>{ randomize(); });
+    clearBtn.addEventListener('click', ()=>{ clearGrid(); });
+    sizeInput.addEventListener('input', ()=>{ resizeCanvas(); });
+    speedInput.addEventListener('input', ()=>{ /* speed applied on next frame */ });
+
+    presetButtons.forEach(b=>b.addEventListener('click', ()=>{
+      const p = b.dataset.preset; applyPreset(p);
+    }));
+
+    saveBtn.addEventListener('click', ()=>{
+      const data = {rows:grid.rows,cols:grid.cols,cells:grid.cells,generation};
+      const blob = new Blob([JSON.stringify(data)],{type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'game-of-life.json'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    loadBtn.addEventListener('click', ()=>{
+      const input = document.createElement('input'); input.type='file'; input.accept='application/json';
+      input.onchange = ()=>{
+        const f = input.files[0]; if (!f) return; const reader = new FileReader();
+        reader.onload = ()=>{
+          try{ const data = JSON.parse(reader.result); if (data.rows && data.cols && data.cells){ rows = data.rows; cols = data.cols; grid = {rows:rows,cols:cols,cells:data.cells}; generation = data.generation||0; resizeCanvas(); draw(); } }
+          catch(err){ alert('Fehler beim Laden: ' + err.message); }
+        };
+        reader.readAsText(f);
+      };
+      input.click();
+    });
+
+    function applyPreset(name){
+      clearGrid();
+      const midx = Math.floor(cols/2), midy = Math.floor(rows/2);
+      if (name==='glider'){
+        const pattern = [[0,1,0],[0,0,1],[1,1,1]];
+        for (let y=0;y<3;y++) for (let x=0;x<3;x++) grid.cells[midy-1+y][midx-1+x] = pattern[y][x];
+      } else if (name==='lwss'){
+        const p = [[0,1,1,1,1],[1,0,0,0,1],[0,0,0,0,1],[1,0,0,1,0]]; for (let y=0;y<p.length;y++) for (let x=0;x<p[0].length;x++) grid.cells[midy-2+y][midx-2+x]=p[y][x];
+      } else if (name==='pulsar'){
+        // small centred pulsar (approx)
+        const coords = [[-6,-4],[-5,-4],[-4,-4],[-2,-4],[-1,-4],[0,-4],[-6,-2],[-1,-2],[0,-2],[4,-4],[5,-4],[6,-4],[2,-4],[1,-4],[0,-4]]; // simplified
+        // simpler: draw a small oscillator
+        const p2 = [[1,1,1],[1,0,1],[1,1,1]]; for (let y=0;y<3;y++) for (let x=0;x<3;x++) grid.cells[midy-1+y][midx-1+x]=p2[y][x];
+      } else if (name==='gosper'){
+        // place a small gosper-like cluster (not full gun to keep size)
+        const pattern = [[1,1,0,0,1,1],[1,1,0,0,1,1]]; for (let y=0;y<pattern.length;y++) for (let x=0;x<pattern[0].length;x++) grid.cells[midy-2+y][midx-3+x]=pattern[y][x];
+      }
+      generation=0; draw();
+    }
+
+    // init
+    grid = makeEmptyGrid();
+    resizeCanvas();
+    randomize();
+  </script>
+</body>
+</html>
